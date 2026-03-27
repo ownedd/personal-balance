@@ -3,6 +3,7 @@ import type {
   AccountAsset,
   AccountAssetWithPrice,
 } from "@/lib/database.types.ts";
+import { supabase } from "@/lib/supabase.ts";
 
 export interface SupportedCryptoAsset {
   symbol: string;
@@ -22,6 +23,39 @@ export const SUPPORTED_CRYPTO_ASSETS: SupportedCryptoAsset[] = [
 let priceCache: { data: Record<string, number>; timestamp: number } | null =
   null;
 const CACHE_TTL_MS = 60_000;
+const CRYPTO_PRICES_FUNCTION = "crypto-prices";
+
+function isLocalhost() {
+  if (typeof window === "undefined") return false;
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
+
+async function fetchDirectFromCoinGecko(
+  uniqueIds: string[]
+): Promise<Record<string, number>> {
+  const params = new URLSearchParams({
+    ids: uniqueIds.join(","),
+    vs_currencies: "usd",
+  });
+
+  const response = await fetch(
+    `https://api.coingecko.com/api/v3/simple/price?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    throw new Error("No se pudieron obtener precios desde CoinGecko");
+  }
+
+  const data = (await response.json()) as Record<
+    string,
+    { usd?: number } | undefined
+  >;
+
+  return uniqueIds.reduce<Record<string, number>>((acc, id) => {
+    acc[id] = Number(data[id]?.usd ?? 0);
+    return acc;
+  }, {});
+}
 
 export async function fetchCryptoPrices(
   coingeckoIds: string[]
@@ -40,29 +74,33 @@ export async function fetchCryptoPrices(
     return priceCache.data;
   }
 
-  const params = new URLSearchParams({
-    ids: uniqueIds.join(","),
-    vs_currencies: "usd",
-  });
+  let prices: Record<string, number> | null = null;
 
-  const response = await fetch(
-    `https://api.coingecko.com/api/v3/simple/price?${params.toString()}`
-  );
+  try {
+    const { data, error } = await supabase.functions.invoke<Record<string, number>>(
+      CRYPTO_PRICES_FUNCTION,
+      {
+        body: { ids: uniqueIds },
+      }
+    );
 
-  if (!response.ok) {
-    if (priceCache) return priceCache.data;
-    throw new Error("No se pudieron obtener precios desde CoinGecko");
+    if (error) {
+      throw error;
+    }
+
+    prices = uniqueIds.reduce<Record<string, number>>((acc, id) => {
+      acc[id] = Number(data?.[id] ?? 0);
+      return acc;
+    }, {});
+  } catch (error) {
+    if (isLocalhost()) {
+      prices = await fetchDirectFromCoinGecko(uniqueIds);
+    } else if (priceCache) {
+      return priceCache.data;
+    } else {
+      throw error;
+    }
   }
-
-  const data = (await response.json()) as Record<
-    string,
-    { usd?: number } | undefined
-  >;
-
-  const prices = uniqueIds.reduce<Record<string, number>>((acc, id) => {
-    acc[id] = Number(data[id]?.usd ?? 0);
-    return acc;
-  }, {});
 
   priceCache = { data: prices, timestamp: Date.now() };
 
