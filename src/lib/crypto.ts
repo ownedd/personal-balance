@@ -25,12 +25,15 @@ let priceCache: { data: Record<string, number>; timestamp: number } | null =
 const CACHE_TTL_MS = 60_000;
 const CRYPTO_PRICES_FUNCTION = "crypto-prices";
 
-function isLocalhost() {
+export const SYNC_CRYPTO_BALANCES_FUNCTION = "sync-crypto-balances";
+
+/** True cuando la app corre en localhost (p. ej. dev sin Edge Functions). */
+export function isLocalhost() {
   if (typeof window === "undefined") return false;
   return ["localhost", "127.0.0.1"].includes(window.location.hostname);
 }
 
-async function fetchDirectFromCoinGecko(
+export async function fetchDirectFromCoinGecko(
   uniqueIds: string[]
 ): Promise<Record<string, number>> {
   const params = new URLSearchParams({
@@ -55,6 +58,18 @@ async function fetchDirectFromCoinGecko(
     acc[id] = Number(data[id]?.usd ?? 0);
     return acc;
   }, {});
+}
+
+/** Sincroniza saldos cripto en servidor y devuelve precios USD por CoinGecko id. */
+export async function invokeSyncCryptoBalances(): Promise<
+  Record<string, number>
+> {
+  const { data, error } = await supabase.functions.invoke<{
+    prices?: Record<string, number>;
+  }>(SYNC_CRYPTO_BALANCES_FUNCTION, { body: {} });
+
+  if (error) throw error;
+  return data?.prices ?? {};
 }
 
 export async function fetchCryptoPrices(

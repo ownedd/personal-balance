@@ -35,7 +35,9 @@ export function PrivacyProvider({ children }: { children: ReactNode }) {
       const next = !prev;
       try {
         localStorage.setItem("pb_hide_amounts", next ? "1" : "0");
-      } catch {}
+      } catch {
+        /* sin localStorage */
+      }
       return next;
     });
   }, []);
@@ -55,6 +57,7 @@ export function PrivacyProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePrivacy() {
   return useContext(PrivacyContext);
 }

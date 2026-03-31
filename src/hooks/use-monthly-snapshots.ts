@@ -1,17 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase.ts";
-import type {
-  Account,
-  AccountAsset,
-  MonthlySnapshot,
-} from "@/lib/database.types.ts";
 import { useAuth } from "@/contexts/auth-context.tsx";
-import {
-  applyCryptoBalancesToAccounts,
-  buildCryptoTotalsByAccount,
-  enrichAccountAssetsWithPrices,
-  fetchCryptoPrices,
-} from "@/lib/crypto.ts";
+import { queryKeys } from "@/lib/query-keys.ts";
+import { invokeSyncCryptoBalances, isLocalhost } from "@/lib/crypto.ts";
+import { fetchMonthlySnapshots } from "@/lib/finance-queries.ts";
 
 interface TxRow {
   type: string;
@@ -20,127 +12,106 @@ interface TxRow {
 
 export function useMonthlySnapshots() {
   const { user } = useAuth();
-  const [snapshots, setSnapshots] = useState<MonthlySnapshot[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const userId = user?.id;
 
-  const fetchSnapshots = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    const { data } = await supabase
-      .from("monthly_snapshots")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("year", { ascending: false })
-      .order("month", { ascending: false });
-    setSnapshots((data as unknown as MonthlySnapshot[]) ?? []);
-    setLoading(false);
-  }, [user]);
+  const snapshotsQuery = useQuery({
+    queryKey: userId ? queryKeys.snapshots(userId) : ["monthly-snapshots", "none"],
+    queryFn: () => fetchMonthlySnapshots(userId!),
+    enabled: Boolean(userId),
+  });
 
-  useEffect(() => {
-    fetchSnapshots();
-  }, [fetchSnapshots]);
+  const invalidateSnapshots = () => {
+    if (userId) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshots(userId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.accountsBundle(userId) });
+    }
+  };
 
-  const closeMonth = async (year: number, month: number) => {
-    if (!user) return { error: new Error("No autenticado") };
+  const closeMonth = useMutation({
+    mutationFn: async ({ year, month }: { year: number; month: number }) => {
+      if (!user) throw new Error("No autenticado");
 
-    const [{ data: accountsData }, { data: assetsData }] = await Promise.all([
-      supabase
+      try {
+        await invokeSyncCryptoBalances();
+      } catch (err) {
+        if (!isLocalhost()) throw err;
+        console.warn("[personal-balance] Cerrar mes sin sync Edge en local:", err);
+      }
+
+      const { data: accountsData, error: accountsError } = await supabase
         .from("accounts")
         .select("*")
         .eq("user_id", user.id)
-        .eq("is_active", true),
-      supabase.from("account_assets").select("*").eq("user_id", user.id),
-    ]);
+        .eq("is_active", true);
 
-    const baseAccounts = (accountsData as unknown as Account[]) ?? [];
-    const assets = (assetsData as unknown as AccountAsset[]) ?? [];
-    let accounts = baseAccounts;
+      if (accountsError) throw accountsError;
 
-    if (assets.length > 0) {
-      try {
-        const prices = await fetchCryptoPrices(
-          assets.map((asset) => asset.coingecko_id)
-        );
-        const pricedAssets = enrichAccountAssetsWithPrices(assets, prices);
-        const totalsByAccount = buildCryptoTotalsByAccount(pricedAssets);
-        accounts = applyCryptoBalancesToAccounts(baseAccounts, totalsByAccount);
+      const accounts = (accountsData as unknown as { id: string; current_balance: unknown }[]) ?? [];
 
-        await Promise.all(
-          accounts
-            .filter((account) => account.type === "crypto_wallet")
-            .map((account) =>
-              supabase
-                .from("accounts")
-                .update({
-                  current_balance: Number(account.current_balance),
-                  currency: "USD",
-                } as Record<string, unknown>)
-                .eq("id", account.id)
-            )
-        );
-      } catch (error) {
-        console.error(error);
+      if (accounts.length === 0) {
+        throw new Error("No hay cuentas activas");
       }
-    }
 
-    if (accounts.length === 0)
-      return { error: new Error("No hay cuentas activas") };
+      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+      const endDate =
+        month === 12
+          ? `${year + 1}-01-01`
+          : `${year}-${String(month + 1).padStart(2, "0")}-01`;
 
-    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-    const endDate =
-      month === 12
-        ? `${year + 1}-01-01`
-        : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+      const errors: Error[] = [];
 
-    const errors: Error[] = [];
+      for (const account of accounts) {
+        const { data: txData } = await supabase
+          .from("transactions")
+          .select("type, amount")
+          .eq("account_id", account.id)
+          .gte("transaction_date", startDate)
+          .lt("transaction_date", endDate);
 
-    for (const account of accounts) {
-      const { data: txData } = await supabase
-        .from("transactions")
-        .select("type, amount")
-        .eq("account_id", account.id)
-        .gte("transaction_date", startDate)
-        .lt("transaction_date", endDate);
+        const txRows = (txData as unknown as TxRow[]) ?? [];
 
-      const txRows = (txData as unknown as TxRow[]) ?? [];
+        const totalIncome = txRows
+          .filter((t) => t.type === "income")
+          .reduce((sum, t) => sum + Number(t.amount), 0);
 
-      const totalIncome = txRows
-        .filter((t) => t.type === "income")
-        .reduce((sum, t) => sum + Number(t.amount), 0);
+        const totalExpenses = txRows
+          .filter((t) => t.type === "expense")
+          .reduce((sum, t) => sum + Number(t.amount), 0);
 
-      const totalExpenses = txRows
-        .filter((t) => t.type === "expense")
-        .reduce((sum, t) => sum + Number(t.amount), 0);
+        const closingBalance = Number(account.current_balance);
+        const openingBalance = closingBalance - totalIncome + totalExpenses;
 
-      const closingBalance = Number(account.current_balance);
-      const openingBalance = closingBalance - totalIncome + totalExpenses;
+        const { error } = await supabase.from("monthly_snapshots").upsert(
+          {
+            account_id: account.id,
+            user_id: user.id,
+            year,
+            month,
+            opening_balance: openingBalance,
+            closing_balance: closingBalance,
+            total_income: totalIncome,
+            total_expenses: totalExpenses,
+            closed_at: new Date().toISOString(),
+          } as Record<string, unknown>,
+          { onConflict: "account_id,year,month" },
+        );
 
-      const { error } = await supabase.from("monthly_snapshots").upsert(
-        {
-          account_id: account.id,
-          user_id: user.id,
-          year,
-          month,
-          opening_balance: openingBalance,
-          closing_balance: closingBalance,
-          total_income: totalIncome,
-          total_expenses: totalExpenses,
-          closed_at: new Date().toISOString(),
-        } as Record<string, unknown>,
-        { onConflict: "account_id,year,month" }
-      );
+        if (error) errors.push(error as unknown as Error);
+      }
 
-      if (error) errors.push(error as unknown as Error);
-    }
-
-    if (errors.length === 0) await fetchSnapshots();
-    return { error: errors.length > 0 ? errors[0] : null };
-  };
+      if (errors.length > 0) throw errors[0];
+    },
+    onSuccess: invalidateSnapshots,
+  });
 
   return {
-    snapshots,
-    loading,
-    closeMonth,
-    refetch: fetchSnapshots,
+    snapshots: snapshotsQuery.data ?? [],
+    loading: snapshotsQuery.isPending,
+    isError: snapshotsQuery.isError,
+    error: snapshotsQuery.error,
+    closeMonth: (year: number, month: number) =>
+      closeMonth.mutateAsync({ year, month }),
+    refetch: snapshotsQuery.refetch,
   };
 }

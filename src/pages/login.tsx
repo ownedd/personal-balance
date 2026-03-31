@@ -1,13 +1,26 @@
 import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/auth-context.tsx";
 import { Lock, Mail, ArrowRight, Eye, EyeOff, Wallet } from "lucide-react";
 
-export function LoginPage({
-  onNavigateRegister,
-}: {
-  onNavigateRegister: () => void;
-}) {
+const linkStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  color: "var(--color-accent)",
+  fontWeight: 500,
+  fontSize: "14px",
+  fontFamily: "inherit",
+  padding: 0,
+  textDecoration: "underline",
+  textUnderlineOffset: "3px",
+  textDecorationColor: "transparent",
+  transition: "text-decoration-color 0.2s",
+};
+
+export function LoginPage() {
   const { signIn } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -19,7 +32,11 @@ export function LoginPage({
     setError("");
     setLoading(true);
     const { error: err } = await signIn(email, password);
-    if (err) setError(err.message);
+    if (err) {
+      setError(err.message);
+    } else {
+      await navigate({ to: "/" });
+    }
     setLoading(false);
   };
 
@@ -80,13 +97,13 @@ export function LoginPage({
             }} />
           </div>
           <h1 style={{
-            fontFamily: "var(--font-display)", fontSize: "40px",
+            fontFamily: "var(--font-display)", fontSize: "clamp(28px, 8vw, 40px)",
             color: "var(--color-text-primary)", letterSpacing: "-0.02em", lineHeight: 1
           }}>
             Personal
           </h1>
           <h1 style={{
-            fontFamily: "var(--font-display)", fontSize: "40px",
+            fontFamily: "var(--font-display)", fontSize: "clamp(28px, 8vw, 40px)",
             color: "var(--color-accent)", letterSpacing: "-0.02em",
             lineHeight: 1, marginTop: "2px"
           }}>
@@ -195,18 +212,18 @@ export function LoginPage({
         {/* Footer */}
         <p style={{ textAlign: "center", marginTop: "28px", color: "var(--color-text-secondary)", fontSize: "14px" }}>
           ¿No tienes cuenta?{" "}
-          <button onClick={onNavigateRegister} style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: "var(--color-accent)", fontWeight: 500, fontSize: "14px",
-            fontFamily: "inherit", padding: 0, transition: "color 0.2s",
-            textDecoration: "underline", textUnderlineOffset: "3px",
-            textDecorationColor: "transparent",
-          }}
-            onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = "var(--color-accent)"}
-            onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = "transparent"}
+          <Link
+            to="/register"
+            style={linkStyle}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.textDecorationColor = "var(--color-accent)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.textDecorationColor = "transparent";
+            }}
           >
             Crear cuenta
-          </button>
+          </Link>
         </p>
       </div>
     </div>

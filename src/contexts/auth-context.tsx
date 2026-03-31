@@ -7,22 +7,7 @@ import {
 } from "react";
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase.ts";
-
-interface AuthContextValue {
-  user: User | null;
-  session: Session | null;
-  loading: boolean;
-  signUp: (
-    email: string,
-    password: string,
-    fullName: string
-  ) => Promise<{ error: Error | null }>;
-  signIn: (
-    email: string,
-    password: string
-  ) => Promise<{ error: Error | null }>;
-  signOut: () => Promise<void>;
-}
+import type { AuthContextValue } from "@/contexts/auth-types.ts";
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -79,6 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** Hook de sesión (mismo módulo que el provider). */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextValue {
   const context = useContext(AuthContext);
   if (!context) {

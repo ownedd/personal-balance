@@ -1,12 +1,24 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/auth-context.tsx";
 import { UserPlus, Mail, Lock, User, ArrowRight, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 
-export function RegisterPage({
-  onNavigateLogin,
-}: {
-  onNavigateLogin: () => void;
-}) {
+const linkStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  color: "var(--color-accent)",
+  fontWeight: 500,
+  fontSize: "14px",
+  fontFamily: "inherit",
+  padding: 0,
+  textDecoration: "underline",
+  textUnderlineOffset: "3px",
+  textDecorationColor: "transparent",
+  transition: "text-decoration-color 0.2s",
+};
+
+export function RegisterPage() {
   const { signUp } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -80,18 +92,30 @@ export function RegisterPage({
             Te enviamos un enlace de confirmación a<br />
             <span style={{ color: "var(--color-accent)", fontWeight: 500 }}>{email}</span>
           </p>
-          <button onClick={onNavigateLogin} style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: "var(--color-accent)", fontWeight: 500, fontSize: "15px",
-            fontFamily: "inherit", textDecoration: "underline",
-            textUnderlineOffset: "3px", textDecorationColor: "transparent",
-            transition: "text-decoration-color 0.2s",
-          }}
-            onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = "var(--color-accent)"}
-            onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = "transparent"}
+          <Link
+            to="/login"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--color-accent)",
+              fontWeight: 500,
+              fontSize: "15px",
+              fontFamily: "inherit",
+              textDecoration: "underline",
+              textUnderlineOffset: "3px",
+              textDecorationColor: "transparent",
+              transition: "text-decoration-color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.textDecorationColor = "var(--color-accent)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.textDecorationColor = "transparent";
+            }}
           >
             Volver al login
-          </button>
+          </Link>
         </div>
       </div>
     );
@@ -256,18 +280,18 @@ export function RegisterPage({
         {/* Footer */}
         <p style={{ textAlign: "center", marginTop: "28px", color: "var(--color-text-secondary)", fontSize: "14px" }}>
           ¿Ya tienes cuenta?{" "}
-          <button onClick={onNavigateLogin} style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: "var(--color-accent)", fontWeight: 500, fontSize: "14px",
-            fontFamily: "inherit", padding: 0, textDecoration: "underline",
-            textUnderlineOffset: "3px", textDecorationColor: "transparent",
-            transition: "text-decoration-color 0.2s",
-          }}
-            onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = "var(--color-accent)"}
-            onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = "transparent"}
+          <Link
+            to="/login"
+            style={linkStyle}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.textDecorationColor = "var(--color-accent)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.textDecorationColor = "transparent";
+            }}
           >
             Iniciar sesión
-          </button>
+          </Link>
         </p>
       </div>
     </div>

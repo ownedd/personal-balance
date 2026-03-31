@@ -61,15 +61,13 @@ export function AccountsPage() {
   );
 
   const handleCreateAccount = async (data: Parameters<typeof createAccount>[0]) => {
-    const { error } = await createAccount(data);
-    if (error) throw error;
+    await createAccount(data);
     setShowAccountForm(false);
   };
 
   const handleUpdateAccount = async (data: Parameters<typeof updateAccount>[1]) => {
     if (!editAccount) return;
-    const { error } = await updateAccount(editAccount.id, data);
-    if (error) throw error;
+    await updateAccount(editAccount.id, data);
     setEditAccount(null);
   };
 
@@ -80,8 +78,7 @@ export function AccountsPage() {
   };
 
   const handleCreateTx = async (data: Parameters<typeof createTransaction>[0]) => {
-    const { error } = await createTransaction(data);
-    if (error) throw error;
+    await createTransaction(data);
     setShowTxForm(false);
     refetchTx();
   };
@@ -95,11 +92,10 @@ export function AccountsPage() {
   }) => {
     const cryptoAccountId = selectedAccountId ?? selectedAccount?.id;
     if (!cryptoAccountId) return;
-    const { error } = await upsertAccountAsset({
+    await upsertAccountAsset({
       account_id: cryptoAccountId,
       ...data,
     });
-    if (error) throw error;
     setShowCryptoAssetForm(false);
     setEditingAsset(null);
   };

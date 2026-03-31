@@ -1,4 +1,5 @@
 import { useDashboard } from "@/hooks/use-dashboard.ts";
+import { useMediaQuery } from "@/hooks/use-media-query.ts";
 import { BalanceOverview } from "@/components/dashboard/balance-overview.tsx";
 import { MonthlyChart } from "@/components/dashboard/monthly-chart.tsx";
 import { AccountSummary } from "@/components/dashboard/account-summary.tsx";
@@ -8,6 +9,7 @@ import { Loader2 } from "lucide-react";
 
 export function DashboardPage() {
   const data = useDashboard();
+  const stackLayout = useMediaQuery("(max-width: 900px)");
 
   if (data.loading) {
     return (
@@ -26,12 +28,24 @@ export function DashboardPage() {
         previousMonthBalance={data.previousMonthBalance}
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: stackLayout ? "1fr" : "1fr 1fr",
+          gap: "28px",
+        }}
+      >
         <MonthlyChart snapshots={data.monthlySnapshots} />
         <AccountSummary accounts={data.accounts} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: stackLayout ? "1fr" : "1fr 1fr",
+          gap: "28px",
+        }}
+      >
         <IncomeExpenses
           income={data.currentMonthIncome}
           expenses={data.currentMonthExpenses}

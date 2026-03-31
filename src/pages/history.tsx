@@ -40,8 +40,16 @@ export function HistoryPage() {
     )
       return;
     setClosing(true);
-    await closeMonth(year, month);
-    setClosing(false);
+    try {
+      await closeMonth(year, month);
+    } catch (err) {
+      console.error(err);
+      const message =
+        err instanceof Error ? err.message : "No se pudo cerrar el mes.";
+      alert(message);
+    } finally {
+      setClosing(false);
+    }
   };
 
   const accountMap = new Map(accounts.map((a) => [a.id, a]));

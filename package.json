@@ -13,6 +13,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
     "@tailwindcss/vite": "^4.2.2",
+    "@tanstack/react-query": "^5.95.2",
     "@tanstack/react-router": "^1.168.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -22,7 +23,8 @@
     "react-dom": "^19.2.4",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
-    "tailwindcss": "^4.2.2"
+    "tailwindcss": "^4.2.2",
+    "workbox-window": "^7.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -37,6 +39,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
     "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vite-plugin-pwa": "^1.2.0",
     "vite-plus": "latest"
   },
   "packageManager": "pnpm@10.33.0",

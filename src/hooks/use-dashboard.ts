@@ -1,18 +1,18 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase.ts";
+import { useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/auth-context.tsx";
+import { queryKeys } from "@/lib/query-keys.ts";
+import {
+  fetchAccountsBundle,
+  fetchCurrentMonthTransactions,
+  fetchMonthlySnapshots,
+  fetchRecentTransactions,
+} from "@/lib/finance-queries.ts";
 import type {
   Account,
-  AccountAsset,
   MonthlySnapshot,
   Transaction,
 } from "@/lib/database.types.ts";
-import { useAuth } from "@/contexts/auth-context.tsx";
-import {
-  applyCryptoBalancesToAccounts,
-  buildCryptoTotalsByAccount,
-  enrichAccountAssetsWithPrices,
-  fetchCryptoPrices,
-} from "@/lib/crypto.ts";
 
 interface TxSummaryRow {
   type: string;
@@ -34,136 +34,101 @@ export interface DashboardData {
 
 export function useDashboard(): DashboardData {
   const { user } = useAuth();
-  const [data, setData] = useState<Omit<DashboardData, "loading">>({
-    totalBalance: 0,
-    accounts: [],
-    recentTransactions: [],
-    monthlySnapshots: [],
-    currentMonthIncome: 0,
-    currentMonthExpenses: 0,
-    previousMonthBalance: null,
-    balanceChange: 0,
-    balanceChangePercent: 0,
+  const userId = user?.id;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const yearMonthKey = `${year}-${String(month).padStart(2, "0")}`;
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+
+  const [accountsQ, txQ, snapshotsQ, monthTxQ] = useQueries({
+    queries: [
+      {
+        queryKey: userId ? queryKeys.accountsBundle(userId) : ["accounts-bundle", "none"],
+        queryFn: () => fetchAccountsBundle(userId!),
+        enabled: Boolean(userId),
+      },
+      {
+        queryKey: userId ? queryKeys.dashboardRecentTx(userId) : ["dashboard-recent-tx", "none"],
+        queryFn: () => fetchRecentTransactions(userId!),
+        enabled: Boolean(userId),
+      },
+      {
+        queryKey: userId ? queryKeys.snapshots(userId) : ["monthly-snapshots", "none"],
+        queryFn: () => fetchMonthlySnapshots(userId!),
+        enabled: Boolean(userId),
+      },
+      {
+        queryKey: userId
+          ? queryKeys.dashboardMonthTx(userId, yearMonthKey)
+          : ["dashboard-month-tx", "none"],
+        queryFn: () => fetchCurrentMonthTransactions(userId!, startDate),
+        enabled: Boolean(userId),
+      },
+    ],
   });
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user) return;
+  return useMemo(() => {
+    const loading =
+      accountsQ.isPending ||
+      txQ.isPending ||
+      snapshotsQ.isPending ||
+      monthTxQ.isPending;
 
-    const fetchData = async () => {
-      setLoading(true);
+    const accounts = accountsQ.data?.accounts ?? [];
+    const totalBalance = accountsQ.data?.totalBalance ?? 0;
 
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1;
-      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const recentTransactions = txQ.data ?? [];
+    const allSnapshots = snapshotsQ.data ?? [];
+    const currentTx = (monthTxQ.data ?? []) as TxSummaryRow[];
 
-      const [accountsRes, assetsRes, txRes, snapshotsRes, currentTxRes] =
-        await Promise.all([
-          supabase
-            .from("accounts")
-            .select("*")
-            .eq("user_id", user.id)
-            .eq("is_active", true)
-            .order("created_at"),
-          supabase
-            .from("account_assets")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: true }),
-          supabase
-            .from("transactions")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("transaction_date", { ascending: false })
-            .order("created_at", { ascending: false })
-            .limit(10),
-          supabase
-            .from("monthly_snapshots")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("year", { ascending: true })
-            .order("month", { ascending: true }),
-          supabase
-            .from("transactions")
-            .select("type, amount")
-            .eq("user_id", user.id)
-            .gte("transaction_date", startDate),
-        ]);
+    const currentMonthIncome = currentTx
+      .filter((t) => t.type === "income")
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+    const currentMonthExpenses = currentTx
+      .filter((t) => t.type === "expense")
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
-      const baseAccounts = (accountsRes.data as unknown as Account[]) ?? [];
-      const assets = (assetsRes.data as unknown as AccountAsset[]) ?? [];
+    const prevSnapshots = allSnapshots.filter(
+      (s) => s.year === prevYear && s.month === prevMonth,
+    );
+    const previousMonthBalance =
+      prevSnapshots.length > 0
+        ? prevSnapshots.reduce((sum, s) => sum + Number(s.closing_balance), 0)
+        : null;
 
-      let accounts = baseAccounts;
+    const balanceChange =
+      previousMonthBalance !== null ? totalBalance - previousMonthBalance : 0;
+    const balanceChangePercent =
+      previousMonthBalance && previousMonthBalance !== 0
+        ? (balanceChange / Math.abs(previousMonthBalance)) * 100
+        : 0;
 
-      if (assets.length > 0) {
-        try {
-          const prices = await fetchCryptoPrices(
-            assets.map((asset) => asset.coingecko_id)
-          );
-          const pricedAssets = enrichAccountAssetsWithPrices(assets, prices);
-          accounts = applyCryptoBalancesToAccounts(
-            baseAccounts,
-            buildCryptoTotalsByAccount(pricedAssets)
-          );
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      const totalBalance = accounts.reduce(
-        (sum, a) => sum + Number(a.current_balance),
-        0
-      );
-
-      const currentTx = (currentTxRes.data as unknown as TxSummaryRow[]) ?? [];
-      const currentMonthIncome = currentTx
-        .filter((t) => t.type === "income")
-        .reduce((sum, t) => sum + Number(t.amount), 0);
-      const currentMonthExpenses = currentTx
-        .filter((t) => t.type === "expense")
-        .reduce((sum, t) => sum + Number(t.amount), 0);
-
-      const allSnapshots = (snapshotsRes.data as unknown as MonthlySnapshot[]) ?? [];
-
-      const prevMonth = month === 1 ? 12 : month - 1;
-      const prevYear = month === 1 ? year - 1 : year;
-      const prevSnapshots = allSnapshots.filter(
-        (s) => s.year === prevYear && s.month === prevMonth
-      );
-      const previousMonthBalance =
-        prevSnapshots.length > 0
-          ? prevSnapshots.reduce(
-              (sum, s) => sum + Number(s.closing_balance),
-              0
-            )
-          : null;
-
-      const balanceChange =
-        previousMonthBalance !== null
-          ? totalBalance - previousMonthBalance
-          : 0;
-      const balanceChangePercent =
-        previousMonthBalance && previousMonthBalance !== 0
-          ? (balanceChange / Math.abs(previousMonthBalance)) * 100
-          : 0;
-
-      setData({
-        totalBalance,
-        accounts,
-        recentTransactions: (txRes.data as unknown as Transaction[]) ?? [],
-        monthlySnapshots: allSnapshots,
-        currentMonthIncome,
-        currentMonthExpenses,
-        previousMonthBalance,
-        balanceChange,
-        balanceChangePercent,
-      });
-      setLoading(false);
+    return {
+      totalBalance,
+      accounts,
+      recentTransactions,
+      monthlySnapshots: allSnapshots,
+      currentMonthIncome,
+      currentMonthExpenses,
+      previousMonthBalance,
+      balanceChange,
+      balanceChangePercent,
+      loading,
     };
-
-    fetchData();
-  }, [user]);
-
-  return { ...data, loading };
+  }, [
+    accountsQ.isPending,
+    accountsQ.data,
+    txQ.isPending,
+    txQ.data,
+    snapshotsQ.isPending,
+    snapshotsQ.data,
+    monthTxQ.isPending,
+    monthTxQ.data,
+    prevYear,
+    prevMonth,
+  ]);
 }
